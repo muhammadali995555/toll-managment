@@ -1,0 +1,220 @@
+1. Set Up Your Environment
+Make sure you have the following installed:
+
+Node.js and npm for package management.
+Hardhat for smart contract development.
+MetaMask for interacting with the blockchain through a web browser.
+Initialize your project:
+
+bash
+Copy code
+mkdir decentralized-file-sharing
+cd decentralized-file-sharing
+npm init -y
+npm install --save hardhat ethers dotenv
+2. Develop the Solidity Smart Contract
+Create a Hardhat project:
+
+bash
+Copy code
+npx hardhat
+In the contracts folder, create a file called FileShare.sol.
+
+solidity
+Copy code
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract FileShare {
+    struct File {
+        string fileHash; // IPFS hash
+        string fileName;
+        address owner;
+    }
+
+    mapping(address => File[]) private userFiles;
+
+    event FileUploaded(address indexed user, string fileHash, string fileName);
+
+    function uploadFile(string memory fileHash, string memory fileName) public {
+        File memory newFile = File(fileHash, fileName, msg.sender);
+        userFiles[msg.sender].push(newFile);
+        emit FileUploaded(msg.sender, fileHash, fileName);
+    }
+
+    function getFiles() public view returns (File[] memory) {
+        return userFiles[msg.sender];
+    }
+}
+This smart contract:
+
+Allows users to upload files (as IPFS hashes).
+Stores files in a mapping specific to each user.
+Emits an event when a file is uploaded.
+3. Compile and Deploy the Smart Contract
+Configure Hardhat to deploy to a test network (like Rinkeby) in hardhat.config.js and set up an account with some test Ether and Infura (or Alchemy).
+
+javascript
+Copy code
+require("@nomiclabs/hardhat-waffle");
+require("dotenv").config();
+
+module.exports = {
+  solidity: "0.8.0",
+  networks: {
+    rinkeby: {
+      url: process.env.INFURA_API_URL,
+      accounts: [`0x${process.env.PRIVATE_KEY}`],
+    },
+  },
+};
+Write a deployment script in the scripts folder called deploy.js:
+
+javascript
+Copy code
+async function main() {
+  const FileShare = await ethers.getContractFactory("FileShare");
+  const fileShare = await FileShare.deploy();
+  await fileShare.deployed();
+  console.log("FileShare deployed to:", fileShare.address);
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+Deploy the contract:
+
+bash
+Copy code
+npx hardhat run scripts/deploy.js --network rinkeby
+4. Set Up IPFS for File Storage
+Install the IPFS library in your project:
+
+bash
+Copy code
+npm install ipfs-http-client
+Configure IPFS in your React app to store and retrieve files using IPFS, returning the hash of each file.
+
+5. Frontend with React and Ethers.js
+Create a React app and install necessary libraries:
+
+bash
+Copy code
+npx create-react-app client
+cd client
+npm install ethers ipfs-http-client
+In the App.js file, set up the frontend to interact with the smart contract.
+
+Example code for App.js
+javascript
+Copy code
+import React, { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import { create } from 'ipfs-http-client';
+
+const ipfsClient = create('https://ipfs.infura.io:5001/api/v0');
+
+const contractAddress = 'YOUR_DEPLOYED_CONTRACT_ADDRESS';
+const contractABI = [
+  {
+    "inputs": [],
+    "name": "getFiles",
+    "outputs": [{ "internalType": "struct FileShare.File[]", "name": "", "type": "tuple[]" }],
+    "stateMutability": "view",
+    "type": "function",
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "fileHash", "type": "string" },
+      { "internalType": "string", "name": "fileName", "type": "string" },
+    ],
+    "name": "uploadFile",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function",
+  }
+];
+
+function App() {
+  const [file, setFile] = useState(null);
+  const [fileHash, setFileHash] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [files, setFiles] = useState([]);
+  const [provider, setProvider] = useState(null);
+  const [contract, setContract] = useState(null);
+
+  useEffect(() => {
+    async function loadBlockchainData() {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, contractABI, signer);
+      setProvider(provider);
+      setContract(contract);
+
+      const files = await contract.getFiles();
+      setFiles(files);
+    }
+    loadBlockchainData();
+  }, []);
+
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+    setFileName(e.target.files[0].name);
+  };
+
+  const uploadFileToIPFS = async () => {
+    try {
+      const added = await ipfsClient.add(file);
+      setFileHash(added.path);
+      return added.path;
+    } catch (error) {
+      console.error("IPFS upload error: ", error);
+    }
+  };
+
+  const uploadFileToBlockchain = async () => {
+    if (!fileHash) return alert("Please upload the file first!");
+    await contract.uploadFile(fileHash, fileName);
+    alert("File uploaded successfully");
+  };
+
+  const handleUpload = async () => {
+    const hash = await uploadFileToIPFS();
+    setFileHash(hash);
+    await uploadFileToBlockchain();
+  };
+
+  return (
+    <div>
+      <h1>Decentralized File Sharing</h1>
+      <input type="file" onChange={handleFileChange} />
+      <button onClick={handleUpload}>Upload</button>
+
+      <h2>Uploaded Files</h2>
+      <ul>
+        {files.map((file, index) => (
+          <li key={index}>
+            <a href={`https://ipfs.infura.io/ipfs/${file.fileHash}`} target="_blank" rel="noopener noreferrer">
+              {file.fileName}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default App;
+6. Run and Test the Application
+Start the React app:
+
+bash
+Copy code
+cd client
+npm start
+Connect MetaMask to the Rinkeby test network and add some test Ether if needed.
+
+Test the app by selecting a file, uploading it to IPFS, and then storing its hash and metadata on the Ethereum blockchain.
